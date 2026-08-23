@@ -1,10 +1,27 @@
-import streamlit as st
+import io
 import numpy as np
+import pandas as pd
+import streamlit as st
 import plotly.graph_objects as go
+import matplotlib.pyplot as plt
 
-# ============================================================
-# PAGE CONFIG
-# ============================================================
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+    Image
+)
+
+
+# =========================================================
+# PAGE CONFIGURATION
+# =========================================================
 
 st.set_page_config(
     page_title="E-k Diagram Analyzer",
@@ -12,255 +29,92 @@ st.set_page_config(
     layout="wide"
 )
 
-# ============================================================
-# CONSTANTS
-# ============================================================
 
-HBAR = 1.054571817e-34
-M0 = 9.1093837139e-31
-EV_TO_J = 1.602176634e-19
-
-
-# ============================================================
-# MATERIAL DATABASE
-# ============================================================
-# k0 is the approximate CBM valley position in Å^-1.
-# k_vbm is taken at Gamma = 0 for this model.
-
-MATERIAL_DATABASE = {
-
-    "Silicon": {
-        "symbol": "Si",
-        "type": "indirect",
-        "k0": 0.85
-    },
-
-    "Germanium": {
-        "symbol": "Ge",
-        "type": "indirect",
-        "k0": 0.50
-    },
-
-    "Gallium Arsenide": {
-        "symbol": "GaAs",
-        "type": "direct",
-        "k0": 0.0
-    },
-
-    "Indium Phosphide": {
-        "symbol": "InP",
-        "type": "direct",
-        "k0": 0.0
-    },
-
-    "Cadmium Telluride": {
-        "symbol": "CdTe",
-        "type": "direct",
-        "k0": 0.0
-    },
-
-    "Gallium Nitride": {
-        "symbol": "GaN",
-        "type": "direct",
-        "k0": 0.0
-    },
-
-    "Zinc Oxide": {
-        "symbol": "ZnO",
-        "type": "direct",
-        "k0": 0.0
-    }
-}
-
-
-# ============================================================
-# CSS
-# ============================================================
+# =========================================================
+# CUSTOM DESIGN
+# =========================================================
 
 st.markdown("""
 <style>
 
 .stApp {
     background:
-        radial-gradient(
-            circle at 15% 15%,
-            rgba(0, 180, 255, 0.18),
-            transparent 28%
-        ),
-        radial-gradient(
-            circle at 85% 20%,
-            rgba(120, 70, 255, 0.18),
-            transparent 30%
-        ),
-        radial-gradient(
-            circle at 50% 90%,
-            rgba(0, 220, 180, 0.10),
-            transparent 32%
-        ),
-        linear-gradient(
-            135deg,
-            #06101d,
-            #0a1830,
-            #07111f
-        );
-
-    color: white;
+    radial-gradient(circle at 10% 10%, rgba(37,99,235,0.12), transparent 25%),
+    radial-gradient(circle at 90% 15%, rgba(124,58,237,0.12), transparent 25%),
+    linear-gradient(135deg,#f8fbff,#eef4ff,#faf5ff);
 }
 
-.block-container {
-    max-width: 1450px;
-    padding-top: 2rem;
-    padding-bottom: 3rem;
+.main-title {
+    text-align:center;
+    font-size:42px;
+    font-weight:800;
+    color:#172554;
+    margin-bottom:5px;
 }
 
-.hero {
-    text-align: center;
-    padding: 20px;
-    margin-bottom: 25px;
-}
-
-.hero h1 {
-    font-size: 43px;
-    font-weight: 800;
-    margin-bottom: 5px;
-}
-
-.hero p {
-    color: #a9bfd9;
-    font-size: 17px;
-}
-
-.physics-strip {
-    text-align: center;
-    padding: 18px;
-    margin-bottom: 25px;
-    border-radius: 22px;
-
-    background:
-        linear-gradient(
-            100deg,
-            rgba(0,150,255,0.12),
-            rgba(120,70,255,0.12)
-        );
-
-    border: 1px solid rgba(130,210,255,0.18);
-    font-size: 27px;
-    color: #72dcff;
-    letter-spacing: 8px;
+.subtitle {
+    text-align:center;
+    color:#475569;
+    font-size:17px;
+    margin-bottom:25px;
 }
 
 .card {
-    background: rgba(12,27,48,0.76);
-    border: 1px solid rgba(130,200,255,0.18);
-    border-radius: 22px;
-    padding: 24px;
-    margin-bottom: 22px;
-
-    box-shadow:
-        0 12px 35px rgba(0,0,0,0.28),
-        inset 0 1px 0 rgba(255,255,255,0.04);
-
-    backdrop-filter: blur(12px);
-}
-
-.section-title {
-    font-size: 22px;
-    font-weight: 750;
-    margin-bottom: 18px;
+    background:rgba(255,255,255,0.92);
+    padding:22px;
+    border-radius:20px;
+    border:1px solid rgba(148,163,184,0.25);
+    box-shadow:0 8px 25px rgba(15,23,42,0.08);
+    margin-bottom:20px;
 }
 
 .result-card {
-    background: rgba(8,23,42,0.85);
-    border: 1px solid rgba(100,190,255,0.20);
-    border-radius: 18px;
-    padding: 20px;
-    min-height: 145px;
+    background:linear-gradient(135deg,#ffffff,#eff6ff);
+    padding:22px;
+    border-radius:20px;
+    border:1px solid #bfdbfe;
+    box-shadow:0 8px 25px rgba(37,99,235,0.08);
 }
 
-.result-symbol {
-    color: #6fdcff;
-    font-size: 20px;
-    font-weight: 700;
+.direct-result {
+    border-left:7px solid #16a34a;
 }
 
-.result-label {
-    color: #91a8c2;
-    font-size: 14px;
-    margin-top: 7px;
-}
-
-.result-value {
-    color: white;
-    font-size: 25px;
-    font-weight: 750;
-    margin-top: 8px;
-}
-
-.bandgap-card {
-    text-align: center;
-    padding: 28px;
-    margin-top: 20px;
-
-    border-radius: 22px;
-
-    background:
-        linear-gradient(
-            135deg,
-            rgba(0,160,255,0.18),
-            rgba(120,70,255,0.18)
-        );
-
-    border: 1px solid rgba(110,210,255,0.28);
-}
-
-.bandgap-value {
-    font-size: 34px;
-    font-weight: 800;
-    margin: 8px;
-}
-
-.direct {
-    color: #53e6a4;
-    font-size: 22px;
-    font-weight: 800;
-}
-
-.indirect {
-    color: #ffc966;
-    font-size: 22px;
-    font-weight: 800;
-}
-
-.stButton > button {
-    width: 100%;
-    min-height: 50px;
-    border-radius: 14px;
-    font-size: 17px;
-    font-weight: 700;
+.indirect-result {
+    border-left:7px solid #2563eb;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
 
-# ============================================================
-# CONVERSION FUNCTIONS
-# ============================================================
+# =========================================================
+# PHYSICAL CONSTANTS
+# =========================================================
 
-def energy_to_joule(value, unit):
+H_BAR = 1.054571817e-34       # J s
+M0 = 9.1093837139e-31         # kg
+EV_TO_J = 1.602176634e-19     # J
+
+
+# =========================================================
+# UNIT CONVERSION FUNCTIONS
+# =========================================================
+
+def energy_to_ev(value, unit):
 
     if unit == "eV":
-        return value * EV_TO_J
+        return float(value)
 
-    return value
+    if unit == "J":
+        return float(value) / EV_TO_J
 
-
-def joule_to_ev(value):
-
-    return value / EV_TO_J
+    return float(value)
 
 
 def mass_to_kg(value, unit):
+
+    value = float(value)
 
     if unit == "kg":
         return value
@@ -277,996 +131,1838 @@ def mass_to_kg(value, unit):
     return value
 
 
-# ============================================================
+def k_to_angstrom(value, unit):
+
+    value = float(value)
+
+    if unit == "Å⁻¹":
+        return value
+
+    if unit == "m⁻¹":
+        return value / 1e10
+
+    return value
+
+
+# =========================================================
+# THEORETICAL E-k MODEL
+# =========================================================
+
+def theoretical_bands(
+    eg_ev,
+    electron_mass,
+    hole_mass,
+    k_values,
+    cbm_k=0.0
+):
+
+    k_meter = k_values * 1e10
+    cbm_k_meter = cbm_k * 1e10
+
+    valence_energy_j = (
+        -(H_BAR ** 2) *
+        k_meter ** 2 /
+        (2 * hole_mass)
+    )
+
+    conduction_energy_j = (
+        eg_ev * EV_TO_J
+        +
+        (H_BAR ** 2) *
+        (k_meter - cbm_k_meter) ** 2 /
+        (2 * electron_mass)
+    )
+
+    valence_energy_ev = valence_energy_j / EV_TO_J
+    conduction_energy_ev = conduction_energy_j / EV_TO_J
+
+    return valence_energy_ev, conduction_energy_ev
+
+
+# =========================================================
+# DFT DATA PROCESSING
+# =========================================================
+
+def prepare_dft_data(df):
+
+    df = df.copy()
+
+    # Convert all columns to numeric where possible
+    for column in df.columns:
+        df[column] = pd.to_numeric(
+            df[column],
+            errors="coerce"
+        )
+
+    df = df.dropna(how="all")
+
+    if df.shape[1] < 2:
+        raise ValueError(
+            "CSV must contain k column and at least one band."
+        )
+
+    # First column = k
+    k_column = df.columns[0]
+
+    df = df.rename(
+        columns={k_column: "k"}
+    )
+
+    df = df.dropna(
+        subset=["k"]
+    )
+
+    return df
+
+
+# =========================================================
+# FIND VBM AND CBM
+# =========================================================
+
+def calculate_vbm_cbm(df, fermi_level):
+
+    k_values = df["k"].values
+
+    band_columns = [
+        column
+        for column in df.columns
+        if column != "k"
+    ]
+
+    occupied = []
+    unoccupied = []
+
+    for band in band_columns:
+
+        energies = df[band].values
+
+        for i, energy in enumerate(energies):
+
+            if np.isnan(energy):
+                continue
+
+            k = k_values[i]
+
+            # Occupied state
+            if energy <= fermi_level:
+                occupied.append(
+                    (energy, k, band)
+                )
+
+            # Unoccupied state
+            if energy > fermi_level:
+                unoccupied.append(
+                    (energy, k, band)
+                )
+
+    if len(occupied) == 0:
+        raise ValueError(
+            "No occupied states found. Check Fermi level."
+        )
+
+    if len(unoccupied) == 0:
+        raise ValueError(
+            "No unoccupied states found. Check Fermi level."
+        )
+
+    # Highest occupied state
+    vbm = max(
+        occupied,
+        key=lambda x: x[0]
+    )
+
+    # Lowest unoccupied state
+    cbm = min(
+        unoccupied,
+        key=lambda x: x[0]
+    )
+
+    E_VBM = vbm[0]
+    k_VBM = vbm[1]
+    VBM_band = vbm[2]
+
+    E_CBM = cbm[0]
+    k_CBM = cbm[1]
+    CBM_band = cbm[2]
+
+    Eg = E_CBM - E_VBM
+
+    delta_k = abs(
+        k_CBM - k_VBM
+    )
+
+    # Numerical tolerance
+    tolerance = 1e-6
+
+    if delta_k <= tolerance:
+
+        band_type = "DIRECT BAND GAP"
+
+    else:
+
+        band_type = "INDIRECT BAND GAP"
+
+    return {
+        "E_VBM": E_VBM,
+        "k_VBM": k_VBM,
+        "VBM_band": VBM_band,
+
+        "E_CBM": E_CBM,
+        "k_CBM": k_CBM,
+        "CBM_band": CBM_band,
+
+        "Eg": Eg,
+
+        "delta_k": delta_k,
+
+        "band_type": band_type
+    }
+
+
+# =========================================================
+# THEORETICAL GRAPH
+# =========================================================
+
+def create_theoretical_graph(
+    k,
+    valence,
+    conduction,
+    material,
+    k_vbm,
+    k_cbm,
+    Eg
+):
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=k,
+            y=valence,
+            mode="lines",
+            name="Valence Band",
+            line=dict(width=3),
+            hovertemplate=
+            "Valence Band<br>"
+            "k = %{x:.6f} Å⁻¹<br>"
+            "Energy = %{y:.6f} eV"
+            "<extra></extra>"
+        )
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=k,
+            y=conduction,
+            mode="lines",
+            name="Conduction Band",
+            line=dict(width=3),
+            hovertemplate=
+            "Conduction Band<br>"
+            "k = %{x:.6f} Å⁻¹<br>"
+            "Energy = %{y:.6f} eV"
+            "<extra></extra>"
+        )
+    )
+
+    vbm_energy = max(valence)
+    cbm_energy = min(conduction)
+
+    fig.add_trace(
+        go.Scatter(
+            x=[k_vbm],
+            y=[vbm_energy],
+            mode="markers+text",
+            text=["VBM"],
+            textposition="top center",
+            name="VBM",
+            marker=dict(
+                size=13,
+                symbol="diamond"
+            )
+        )
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=[k_cbm],
+            y=[cbm_energy],
+            mode="markers+text",
+            text=["CBM"],
+            textposition="top center",
+            name="CBM",
+            marker=dict(
+                size=13,
+                symbol="diamond"
+            )
+        )
+    )
+
+    # Gap line
+    fig.add_trace(
+        go.Scatter(
+            x=[k_vbm, k_cbm],
+            y=[vbm_energy, cbm_energy],
+            mode="lines",
+            name="Band Gap",
+            line=dict(
+                dash="dash",
+                width=2
+            )
+        )
+    )
+
+    # Band gap label
+    fig.add_annotation(
+        x=(k_vbm + k_cbm) / 2,
+        y=(vbm_energy + cbm_energy) / 2,
+        text=f"Eg = {Eg:.4f} eV",
+        showarrow=False
+    )
+
+    if abs(k_vbm - k_cbm) < 1e-10:
+
+        band_type = "DIRECT BAND GAP"
+
+    else:
+
+        band_type = "INDIRECT BAND GAP"
+
+    fig.add_annotation(
+        x=0.98,
+        y=0.97,
+        xref="paper",
+        yref="paper",
+        text=band_type,
+        showarrow=False,
+        xanchor="right",
+        font=dict(size=16)
+    )
+
+    fig.update_layout(
+        title=f"E–k Diagram — {material}",
+        xaxis_title="Wave Vector k (Å⁻¹)",
+        yaxis_title="Energy (eV)",
+        template="plotly_white",
+        height=650,
+        hovermode="closest"
+    )
+
+    fig.add_hline(
+        y=0,
+        line_dash="dot"
+    )
+
+    return fig
+
+
+# =========================================================
+# DFT GRAPH
+# =========================================================
+
+def create_dft_graph(
+    df,
+    material,
+    fermi_level,
+    result
+):
+
+    fig = go.Figure()
+
+    band_columns = [
+        column
+        for column in df.columns
+        if column != "k"
+    ]
+
+    for band in band_columns:
+
+        fig.add_trace(
+            go.Scatter(
+                x=df["k"],
+                y=df[band],
+                mode="lines",
+                name=str(band),
+                hovertemplate=
+                f"{band}<br>"
+                "k = %{x:.6f} Å⁻¹<br>"
+                "Energy = %{y:.6f} eV"
+                "<extra></extra>"
+            )
+        )
+
+    # VBM
+    fig.add_trace(
+        go.Scatter(
+            x=[result["k_VBM"]],
+            y=[result["E_VBM"]],
+            mode="markers+text",
+            text=["VBM"],
+            textposition="top center",
+            name="VBM",
+            marker=dict(
+                size=14,
+                symbol="diamond"
+            ),
+            hovertemplate=
+            f"VBM<br>"
+            f"k = {result['k_VBM']:.6f} Å⁻¹<br>"
+            f"E = {result['E_VBM']:.6f} eV"
+            "<extra></extra>"
+        )
+    )
+
+    # CBM
+    fig.add_trace(
+        go.Scatter(
+            x=[result["k_CBM"]],
+            y=[result["E_CBM"]],
+            mode="markers+text",
+            text=["CBM"],
+            textposition="top center",
+            name="CBM",
+            marker=dict(
+                size=14,
+                symbol="diamond"
+            ),
+            hovertemplate=
+            f"CBM<br>"
+            f"k = {result['k_CBM']:.6f} Å⁻¹<br>"
+            f"E = {result['E_CBM']:.6f} eV"
+            "<extra></extra>"
+        )
+    )
+
+    # VBM-CBM separation
+    fig.add_trace(
+        go.Scatter(
+            x=[
+                result["k_VBM"],
+                result["k_CBM"]
+            ],
+            y=[
+                result["E_VBM"],
+                result["E_CBM"]
+            ],
+            mode="lines",
+            name="VBM–CBM",
+            line=dict(
+                dash="dash",
+                width=2
+            ),
+            hoverinfo="skip"
+        )
+    )
+
+    # Fermi level
+    fig.add_hline(
+        y=fermi_level,
+        line_dash="dot",
+        annotation_text=
+        f"Fermi Level = {fermi_level:.4f} eV"
+    )
+
+    # Direct/Indirect label
+    fig.add_annotation(
+        x=0.98,
+        y=0.97,
+        xref="paper",
+        yref="paper",
+        text=result["band_type"],
+        showarrow=False,
+        xanchor="right",
+        font=dict(size=16)
+    )
+
+    fig.update_layout(
+        title=f"Multi-band E–k Diagram — {material}",
+        xaxis_title="Wave Vector k (Å⁻¹)",
+        yaxis_title="Energy (eV)",
+        template="plotly_white",
+        height=700,
+        hovermode="closest"
+    )
+
+    return fig
+
+
+# =========================================================
+# DOS GRAPH
+# =========================================================
+
+def create_dos_graph(
+    dos_df,
+    material,
+    fermi_level
+):
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=dos_df["energy"],
+            y=dos_df["dos"],
+            mode="lines",
+            name="DOS",
+            line=dict(width=3),
+            hovertemplate=
+            "Energy = %{x:.6f} eV<br>"
+            "DOS = %{y:.6f}"
+            "<extra></extra>"
+        )
+    )
+
+    fig.add_vline(
+        x=fermi_level,
+        line_dash="dot",
+        annotation_text=
+        f"Fermi Level = {fermi_level:.4f} eV"
+    )
+
+    fig.update_layout(
+        title=f"DOS — {material}",
+        xaxis_title="Energy (eV)",
+        yaxis_title="Density of States",
+        template="plotly_white",
+        height=500
+    )
+
+    return fig
+
+
+# =========================================================
+# PDF REPORT
+# =========================================================
+
+def create_pdf_report(
+    material,
+    symbol,
+    source,
+    fermi,
+    result
+):
+
+    buffer = io.BytesIO()
+
+    document = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=35,
+        leftMargin=35,
+        topMargin=35,
+        bottomMargin=35
+    )
+
+    styles = getSampleStyleSheet()
+
+    title = ParagraphStyle(
+        "Title",
+        parent=styles["Title"],
+        fontSize=20,
+        leading=24
+    )
+
+    normal = ParagraphStyle(
+        "Normal",
+        parent=styles["BodyText"],
+        fontSize=10,
+        leading=14
+    )
+
+    heading = ParagraphStyle(
+        "Heading",
+        parent=styles["Heading2"],
+        fontSize=14
+    )
+
+    story = []
+
+    story.append(
+        Paragraph(
+            "E–k Band Structure Analysis Report",
+            title
+        )
+    )
+
+    story.append(
+        Spacer(1, 15)
+    )
+
+    story.append(
+        Paragraph(
+            f"<b>Material:</b> {material} ({symbol})",
+            normal
+        )
+    )
+
+    story.append(
+        Paragraph(
+            f"<b>Data Source:</b> {source}",
+            normal
+        )
+    )
+
+    story.append(
+        Paragraph(
+            f"<b>Fermi Level:</b> {fermi:.6f} eV",
+            normal
+        )
+    )
+
+    story.append(
+        Spacer(1, 15)
+    )
+
+    story.append(
+        Paragraph(
+            "Calculation Result",
+            heading
+        )
+    )
+
+    table_data = [
+        ["Parameter", "Value"],
+
+        [
+            "VBM Energy",
+            f"{result['E_VBM']:.8f} eV"
+        ],
+
+        [
+            "VBM k-position",
+            f"{result['k_VBM']:.8f} Å⁻¹"
+        ],
+
+        [
+            "VBM Band",
+            result["VBM_band"]
+        ],
+
+        [
+            "CBM Energy",
+            f"{result['E_CBM']:.8f} eV"
+        ],
+
+        [
+            "CBM k-position",
+            f"{result['k_CBM']:.8f} Å⁻¹"
+        ],
+
+        [
+            "CBM Band",
+            result["CBM_band"]
+        ],
+
+        [
+            "Band Gap Eg",
+            f"{result['Eg']:.8f} eV"
+        ],
+
+        [
+            "Band Gap Type",
+            result["band_type"]
+        ],
+
+        [
+            "Wave Vector Separation",
+            f"{result['delta_k']:.8f} Å⁻¹"
+        ]
+    ]
+
+    table = Table(
+        table_data,
+        colWidths=[
+            2.5 * inch,
+            3.5 * inch
+        ]
+    )
+
+    table.setStyle(
+        TableStyle([
+            (
+                "BACKGROUND",
+                (0,0),
+                (-1,0),
+                colors.lightgrey
+            ),
+
+            (
+                "GRID",
+                (0,0),
+                (-1,-1),
+                0.5,
+                colors.grey
+            ),
+
+            (
+                "FONTNAME",
+                (0,0),
+                (-1,0),
+                "Helvetica-Bold"
+            ),
+
+            (
+                "VALIGN",
+                (0,0),
+                (-1,-1),
+                "MIDDLE"
+            ),
+
+            (
+                "PADDING",
+                (0,0),
+                (-1,-1),
+                6
+            )
+        ])
+    )
+
+    story.append(table)
+
+    story.append(
+        Spacer(1,20)
+    )
+
+    story.append(
+        Paragraph(
+            "Mathematical Relations",
+            heading
+        )
+    )
+
+    formulas = [
+        "E<sub>VBM</sub> = maximum occupied-state energy",
+        "E<sub>CBM</sub> = minimum unoccupied-state energy",
+        "E<sub>g</sub> = E<sub>CBM</sub> − E<sub>VBM</sub>",
+        "Direct gap: k<sub>VBM</sub> = k<sub>CBM</sub>",
+        "Indirect gap: k<sub>VBM</sub> ≠ k<sub>CBM</sub>"
+    ]
+
+    for formula in formulas:
+
+        story.append(
+            Paragraph(
+                "• " + formula,
+                normal
+            )
+        )
+
+    story.append(
+        Spacer(1,20)
+    )
+
+    story.append(
+        Paragraph(
+            "<b>Important:</b> This application analyzes supplied "
+            "theoretical, DFT or experimental data. It does not perform "
+            "a DFT calculation itself.",
+            normal
+        )
+    )
+
+    document.build(story)
+
+    buffer.seek(0)
+
+    return buffer.getvalue()
+
+
+# =========================================================
 # HEADER
-# ============================================================
+# =========================================================
 
-st.markdown("""
-<div class="hero">
+st.markdown(
+    '<div class="main-title">⚛️ E–k DIAGRAM ANALYZER</div>',
+    unsafe_allow_html=True
+)
 
-<h1>⚛️ E–k Diagram Analyzer</h1>
-
-<p>
-Interactive Semiconductor Band Structure & Band Gap Analysis
-</p>
-
-</div>
-""", unsafe_allow_html=True)
-
-
-st.markdown("""
-<div class="physics-strip">
-E(k) &nbsp; ψ &nbsp; ℏ &nbsp; k &nbsp; m* &nbsp; Eg &nbsp; VBM &nbsp; CBM
-</div>
-""", unsafe_allow_html=True)
+st.markdown(
+    '<div class="subtitle">'
+    'Semiconductor Band Structure • VBM • CBM • Band Gap • DOS'
+    '</div>',
+    unsafe_allow_html=True
+)
 
 
-# ============================================================
-# MAIN LAYOUT
-# ============================================================
+# =========================================================
+# SIDEBAR
+# =========================================================
 
-left, right = st.columns([3.5, 1])
+with st.sidebar:
+
+    st.header("⚙️ Analysis Mode")
+
+    mode = st.radio(
+        "Select Mode",
+        [
+            "Theoretical E–k Model",
+            "Real / DFT Data Analysis"
+        ]
+    )
+
+    st.markdown("---")
+
+    st.header("🔄 Unit Converter")
+
+    # Energy
+    st.subheader("Energy")
+
+    energy_value = st.number_input(
+        "Energy Value",
+        value=1.0
+    )
+
+    energy_from = st.selectbox(
+        "From",
+        ["eV", "J"],
+        key="energy_from"
+    )
+
+    energy_to = st.selectbox(
+        "To",
+        ["eV", "J"],
+        key="energy_to"
+    )
+
+    energy_ev = energy_to_ev(
+        energy_value,
+        energy_from
+    )
+
+    if energy_to == "J":
+
+        output_energy = (
+            energy_ev * EV_TO_J
+        )
+
+    else:
+
+        output_energy = energy_ev
+
+    st.info(
+        f"{output_energy:.8g} {energy_to}"
+    )
+
+    # Mass
+    st.subheader("Mass")
+
+    mass_value = st.number_input(
+        "Mass Value",
+        value=1.0
+    )
+
+    mass_from = st.selectbox(
+        "From",
+        ["kg", "g", "mg", "m₀"],
+        key="mass_from"
+    )
+
+    mass_to = st.selectbox(
+        "To",
+        ["kg", "g", "mg", "m₀"],
+        key="mass_to"
+    )
+
+    mass_kg = mass_to_kg(
+        mass_value,
+        mass_from
+    )
+
+    if mass_to == "kg":
+        mass_output = mass_kg
+
+    elif mass_to == "g":
+        mass_output = mass_kg * 1000
+
+    elif mass_to == "mg":
+        mass_output = mass_kg * 1e6
+
+    else:
+        mass_output = mass_kg / M0
+
+    st.info(
+        f"{mass_output:.8g} {mass_to}"
+    )
+
+    # Wave vector
+    st.subheader("Wave Vector")
+
+    k_value = st.number_input(
+        "k Value",
+        value=1.0
+    )
+
+    k_from = st.selectbox(
+        "From",
+        ["Å⁻¹", "m⁻¹"],
+        key="k_from"
+    )
+
+    k_to = st.selectbox(
+        "To",
+        ["Å⁻¹", "m⁻¹"],
+        key="k_to"
+    )
+
+    k_ang = k_to_angstrom(
+        k_value,
+        k_from
+    )
+
+    if k_to == "Å⁻¹":
+        k_output = k_ang
+    else:
+        k_output = k_ang * 1e10
+
+    st.info(
+        f"{k_output:.8g} {k_to}"
+    )
+
+    st.markdown("---")
+
+    st.caption(
+        "Scientific calculations are performed directly by Python. "
+        "No AI/API is used."
+    )
 
 
-# ============================================================
-# MATERIAL DETAILS
-# ============================================================
+# =========================================================
+# THEORETICAL MODE
+# =========================================================
 
-with left:
+if mode == "Theoretical E–k Model":
 
     st.markdown(
         '<div class="card">',
         unsafe_allow_html=True
     )
 
-    st.markdown(
-        '<div class="section-title">🔬 Material Details</div>',
-        unsafe_allow_html=True
-    )
+    st.subheader("🧪 Material Details")
 
-    c1, c2 = st.columns(2)
+    col1, col2 = st.columns(2)
 
-    with c1:
+    with col1:
 
-        material_name = st.text_input(
+        material = st.text_input(
             "Material Name",
-            placeholder="Example: Silicon"
+            "Silicon"
         )
 
-        material_symbol = st.text_input(
+        symbol = st.text_input(
             "Material Symbol",
-            placeholder="Example: Si"
+            "Si"
         )
 
-    with c2:
+    with col2:
 
-        eg_c1, eg_c2 = st.columns([2.3, 1])
+        Eg_value = st.number_input(
+            "Band Gap Energy Eg",
+            min_value=0.0,
+            value=1.12
+        )
 
-        with eg_c1:
+        Eg_unit = st.selectbox(
+            "Energy Unit",
+            ["eV", "J"]
+        )
 
-            eg_value = st.number_input(
-                "Band Gap Energy  E₉",
-                min_value=0.000001,
-                value=1.12,
-                step=0.01
-            )
+    col1, col2 = st.columns(2)
 
-        with eg_c2:
+    with col1:
 
-            eg_unit = st.selectbox(
-                "Unit",
-                ["eV", "J"]
-            )
-
-    st.markdown("### Electron Effective Mass  mₑ*")
-
-    me_c1, me_c2 = st.columns([2.3, 1])
-
-    with me_c1:
-
-        me_value = st.number_input(
-            "Electron Effective Mass",
+        electron_mass_value = st.number_input(
+            "Electron Effective Mass mₑ*",
             min_value=0.000001,
-            value=0.26,
-            step=0.01
+            value=0.26
         )
 
-    with me_c2:
-
-        me_unit = st.selectbox(
+        electron_mass_unit = st.selectbox(
             "Electron Mass Unit",
             ["m₀", "kg", "g", "mg"]
         )
 
-    st.markdown("### Hole Effective Mass  mₕ*")
+    with col2:
 
-    mh_c1, mh_c2 = st.columns([2.3, 1])
-
-    with mh_c1:
-
-        mh_value = st.number_input(
-            "Hole Effective Mass",
+        hole_mass_value = st.number_input(
+            "Hole Effective Mass mₕ*",
             min_value=0.000001,
-            value=0.39,
-            step=0.01
+            value=0.39
         )
 
-    with mh_c2:
-
-        mh_unit = st.selectbox(
+        hole_mass_unit = st.selectbox(
             "Hole Mass Unit",
             ["m₀", "kg", "g", "mg"]
         )
 
-    st.markdown("</div>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns(3)
 
-
-# ============================================================
-# K RANGE
-# ============================================================
-
-with left:
-
-    st.markdown(
-        '<div class="card">',
-        unsafe_allow_html=True
-    )
-
-    st.markdown(
-        '<div class="section-title">〰️ Wave Vector Range</div>',
-        unsafe_allow_html=True
-    )
-
-    k1, k2, k3 = st.columns(3)
-
-    with k1:
+    with col1:
 
         k_min = st.number_input(
             "k Minimum",
-            value=-1.2
+            value=-1.0
         )
 
-    with k2:
+    with col2:
 
         k_max = st.number_input(
             "k Maximum",
-            value=1.2
+            value=1.0
         )
 
-    with k3:
+    with col3:
 
-        k_unit = st.selectbox(
-            "k Unit",
-            ["Å⁻¹", "m⁻¹"]
+        number_points = st.number_input(
+            "Number of Points",
+            min_value=100,
+            max_value=5000,
+            value=800,
+            step=100
         )
-
-    points = st.slider(
-        "Number of Points / Graph Smoothness",
-        min_value=200,
-        max_value=5000,
-        value=1200,
-        step=100
-    )
 
     st.markdown("</div>", unsafe_allow_html=True)
-
-
-# ============================================================
-# RIGHT UNIT CONVERTER
-# ============================================================
-
-with right:
 
     st.markdown(
         '<div class="card">',
         unsafe_allow_html=True
     )
 
-    st.markdown(
-        '<div class="section-title">🔄 Unit Converter</div>',
-        unsafe_allow_html=True
+    st.subheader(
+        "📐 Theoretical Band Arrangement"
     )
 
-    # ENERGY
-
-    st.markdown("### ⚡ Energy")
-
-    energy_value = st.number_input(
-        "Energy",
-        value=1.0,
-        key="energy_converter"
+    st.info(
+        "Direct/Indirect is used here only to construct the theoretical "
+        "model. In Real/DFT mode the program automatically determines "
+        "Direct or Indirect from VBM and CBM positions."
     )
 
-    energy_conversion = st.selectbox(
-        "Conversion",
-        ["eV → J", "J → eV"],
-        key="energy_conversion"
-    )
-
-    if st.button(
-        "Convert Energy",
-        key="energy_button"
-    ):
-
-        if energy_conversion == "eV → J":
-
-            result = energy_value * EV_TO_J
-
-            st.success(
-                f"{result:.6e} J"
-            )
-
-        else:
-
-            result = energy_value / EV_TO_J
-
-            st.success(
-                f"{result:.6f} eV"
-            )
-
-    st.divider()
-
-    # MASS
-
-    st.markdown("### ⚖️ Mass")
-
-    mass_value = st.number_input(
-        "Mass",
-        value=1.0,
-        key="mass_converter"
-    )
-
-    mass_conversion = st.selectbox(
-        "Conversion",
+    theoretical_type = st.radio(
+        "Band arrangement",
         [
-            "kg → g",
-            "g → kg",
-            "mg → kg",
-            "m₀ → kg"
+            "Direct",
+            "Indirect"
         ],
-        key="mass_conversion"
+        horizontal=True
     )
 
-    if st.button(
-        "Convert Mass",
-        key="mass_button"
-    ):
+    if theoretical_type == "Indirect":
 
-        if mass_conversion == "kg → g":
-
-            st.success(
-                f"{mass_value * 1000:.6g} g"
-            )
-
-        elif mass_conversion == "g → kg":
-
-            st.success(
-                f"{mass_value / 1000:.6e} kg"
-            )
-
-        elif mass_conversion == "mg → kg":
-
-            st.success(
-                f"{mass_value * 1e-6:.6e} kg"
-            )
-
-        else:
-
-            st.success(
-                f"{mass_value * M0:.6e} kg"
-            )
-
-    st.divider()
-
-    # K
-
-    st.markdown("### 〰️ Wave Vector")
-
-    k_value = st.number_input(
-        "k",
-        value=1.0,
-        key="k_converter"
-    )
-
-    k_conversion = st.selectbox(
-        "Conversion",
-        [
-            "Å⁻¹ → m⁻¹",
-            "m⁻¹ → Å⁻¹"
-        ],
-        key="k_conversion"
-    )
-
-    if st.button(
-        "Convert k",
-        key="k_button"
-    ):
-
-        if k_conversion == "Å⁻¹ → m⁻¹":
-
-            st.success(
-                f"{k_value * 1e10:.6e} m⁻¹"
-            )
-
-        else:
-
-            st.success(
-                f"{k_value / 1e10:.6e} Å⁻¹"
-            )
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-
-# ============================================================
-# GENERATE BUTTON
-# ============================================================
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-generate = st.button(
-    "🚀 GENERATE E–k DIAGRAM",
-    type="primary",
-    use_container_width=True
-)
-
-
-# ============================================================
-# ANALYSIS
-# ============================================================
-
-if generate:
-
-    if material_name.strip() == "":
-        st.error("Please enter Material Name.")
-
-    elif material_symbol.strip() == "":
-        st.error("Please enter Material Symbol.")
-
-    elif k_min >= k_max:
-        st.error("k Minimum must be smaller than k Maximum.")
+        cbm_k = st.number_input(
+            "CBM k-position (Å⁻¹)",
+            value=0.80
+        )
 
     else:
 
-        # ----------------------------------------------------
-        # FIND MATERIAL INFORMATION
-        # ----------------------------------------------------
+        cbm_k = 0.0
 
-        material_info = MATERIAL_DATABASE.get(
-            material_name.strip()
-        )
+    st.markdown("</div>", unsafe_allow_html=True)
 
-        if material_info is None:
+    # Generate
+    if st.button(
+        "🚀 Generate E–k Diagram",
+        type="primary",
+        use_container_width=True
+    ):
 
-            st.warning(
-                "This material is not available in the built-in "
-                "band-valley database. The program will generate "
-                "a Gamma-centered theoretical band structure, "
-                "so Direct/Indirect classification for an unknown "
-                "material should not be treated as experimental data."
+        if k_max <= k_min:
+
+            st.error(
+                "k Maximum must be greater than k Minimum."
             )
 
-            k0 = 0.0
+            st.stop()
 
-        else:
+        try:
 
-            k0 = material_info["k0"]
+            Eg_ev = energy_to_ev(
+                Eg_value,
+                Eg_unit
+            )
 
-        # ----------------------------------------------------
-        # CONVERT PARAMETERS
-        # ----------------------------------------------------
+            me = mass_to_kg(
+                electron_mass_value,
+                electron_mass_unit
+            )
 
-        Eg_J = energy_to_joule(
-            eg_value,
-            eg_unit
+            mh = mass_to_kg(
+                hole_mass_value,
+                hole_mass_unit
+            )
+
+            k = np.linspace(
+                k_min,
+                k_max,
+                int(number_points)
+            )
+
+            valence, conduction = theoretical_bands(
+                Eg_ev,
+                me,
+                mh,
+                k,
+                cbm_k
+            )
+
+            k_vbm = 0.0
+
+            k_cbm = cbm_k
+
+            vbm_energy = max(
+                valence
+            )
+
+            cbm_energy = min(
+                conduction
+            )
+
+            calculated_Eg = (
+                cbm_energy -
+                vbm_energy
+            )
+
+            fig = create_theoretical_graph(
+                k,
+                valence,
+                conduction,
+                material,
+                k_vbm,
+                k_cbm,
+                calculated_Eg
+            )
+
+            st.plotly_chart(
+                fig,
+                use_container_width=True
+            )
+
+            # Result
+            if abs(
+                k_vbm - k_cbm
+            ) < 1e-10:
+
+                band_type = (
+                    "DIRECT BAND GAP"
+                )
+
+                result_class = (
+                    "direct-result"
+                )
+
+            else:
+
+                band_type = (
+                    "INDIRECT BAND GAP"
+                )
+
+                result_class = (
+                    "indirect-result"
+                )
+
+            st.markdown(
+                f'<div class="result-card {result_class}">',
+                unsafe_allow_html=True
+            )
+
+            st.subheader(
+                "📊 Calculation Result"
+            )
+
+            c1, c2, c3 = st.columns(3)
+
+            with c1:
+
+                st.metric(
+                    "VBM Energy",
+                    f"{vbm_energy:.6f} eV"
+                )
+
+                st.write(
+                    f"kᵥᵦₘ = {k_vbm:.6f} Å⁻¹"
+                )
+
+            with c2:
+
+                st.metric(
+                    "CBM Energy",
+                    f"{cbm_energy:.6f} eV"
+                )
+
+                st.write(
+                    f"k꜀ᵦₘ = {k_cbm:.6f} Å⁻¹"
+                )
+
+            with c3:
+
+                st.metric(
+                    "Band Gap Eg",
+                    f"{calculated_Eg:.6f} eV"
+                )
+
+                st.write(
+                    band_type
+                )
+
+            st.markdown(
+                f"""
+### Mathematical Result
+
+\[
+E_{{VBM}} = {vbm_energy:.6f}\ eV
+\]
+
+\[
+E_{{CBM}} = {cbm_energy:.6f}\ eV
+\]
+
+\[
+E_g = E_{{CBM}} - E_{{VBM}}
+\]
+
+\[
+E_g = {cbm_energy:.6f} - ({vbm_energy:.6f})
+\]
+
+\[
+\boxed{{E_g = {calculated_Eg:.6f}\ eV}}
+\]
+
+\[
+\Delta k =
+|k_{{CBM}}-k_{{VBM}}|
+=
+{abs(k_cbm-k_vbm):.6f}\ Å^{{-1}}
+\]
+
+### Result
+
+**{band_type}**
+"""
+            )
+
+            st.markdown(
+                "</div>",
+                unsafe_allow_html=True
+            )
+
+            result_df = pd.DataFrame([
+                {
+                    "Material": material,
+                    "Symbol": symbol,
+                    "VBM Energy (eV)": vbm_energy,
+                    "VBM k (Å^-1)": k_vbm,
+                    "CBM Energy (eV)": cbm_energy,
+                    "CBM k (Å^-1)": k_cbm,
+                    "Band Gap Eg (eV)": calculated_Eg,
+                    "Band Gap Type": band_type
+                }
+            ])
+
+            st.download_button(
+                "📊 Download CSV Result",
+                result_df.to_csv(
+                    index=False
+                ).encode("utf-8"),
+                file_name=
+                f"{symbol}_E-k_result.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+        except Exception as error:
+
+            st.error(
+                f"Calculation Error: {error}"
+            )
+
+
+# =========================================================
+# REAL / DFT MODE
+# =========================================================
+
+else:
+
+    st.markdown(
+        '<div class="card">',
+        unsafe_allow_html=True
+    )
+
+    st.subheader(
+        "🔬 Material Information"
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        material = st.text_input(
+            "Material Name",
+            "Silicon"
         )
 
-        me_kg = mass_to_kg(
-            me_value,
-            me_unit
+        symbol = st.text_input(
+            "Material Symbol",
+            "Si"
         )
 
-        mh_kg = mass_to_kg(
-            mh_value,
-            mh_unit
+    with col2:
+
+        data_source = st.selectbox(
+            "Data Source",
+            [
+                "DFT Calculation",
+                "Experimental",
+                "Other"
+            ]
         )
 
-        # ----------------------------------------------------
-        # K GRID
-        # ----------------------------------------------------
-
-        k = np.linspace(
-            k_min,
-            k_max,
-            points
+        k_unit = st.selectbox(
+            "Uploaded k Unit",
+            [
+                "Å⁻¹",
+                "m⁻¹"
+            ]
         )
 
-        # If m^-1 was selected, convert the displayed
-        # range to SI for calculation.
+    st.markdown(
+        "</div>",
+        unsafe_allow_html=True
+    )
 
-        if k_unit == "Å⁻¹":
+    # -----------------------------------------------------
+    # E-k CSV
+    # -----------------------------------------------------
 
-            k_si = k * 1e10
-            k0_si = k0 * 1e10
+    st.markdown(
+        '<div class="card">',
+        unsafe_allow_html=True
+    )
 
-        else:
+    st.subheader(
+        "📂 Multi-band E–k Data"
+    )
 
-            k_si = k
-            k0_si = k0 * 1e10
+    st.info(
+        "CSV format: first column = k, remaining columns = "
+        "band energies in eV."
+    )
 
-        # ----------------------------------------------------
-        # VALENCE BAND
-        # ----------------------------------------------------
-        #
-        # VBM is centered around Gamma (k = 0).
-        #
-        # E_v(k) = -hbar² k² / 2mh*
-        #
+    ek_file = st.file_uploader(
+        "Upload E–k CSV",
+        type=["csv"]
+    )
 
-        Ev_J = -(
-            HBAR**2 *
-            k_si**2
-            /
-            (2 * mh_kg)
-        )
+    st.markdown(
+        "</div>",
+        unsafe_allow_html=True
+    )
 
-        # ----------------------------------------------------
-        # CONDUCTION BAND
-        # ----------------------------------------------------
-        #
-        # For direct materials k0 = 0.
-        #
-        # For indirect materials the conduction minimum
-        # occurs at k = ±k0.
-        #
+    if ek_file is not None:
 
-        Ec_J = Eg_J + (
-            HBAR**2 *
-            (np.abs(k_si) - abs(k0_si))**2
-            /
-            (2 * me_kg)
-        )
+        try:
 
-        # ----------------------------------------------------
-        # CONVERT TO eV
-        # ----------------------------------------------------
+            raw_df = pd.read_csv(
+                ek_file
+            )
 
-        Ev = Ev_J / EV_TO_J
-        Ec = Ec_J / EV_TO_J
+            ek_df = prepare_dft_data(
+                raw_df
+            )
 
-        # ----------------------------------------------------
-        # AUTOMATIC VBM
-        # ----------------------------------------------------
+            # Convert k to Å^-1
+            if k_unit == "m⁻¹":
 
-        vbm_index = np.argmax(Ev)
+                ek_df["k"] = (
+                    ek_df["k"] /
+                    1e10
+                )
 
-        k_vbm = k[vbm_index]
+            st.success(
+                f"Data loaded successfully — "
+                f"{len(ek_df)} k-points, "
+                f"{len(ek_df.columns)-1} bands."
+            )
 
-        E_vbm = Ev[vbm_index]
+            st.dataframe(
+                ek_df.head(10),
+                use_container_width=True
+            )
 
-        # ----------------------------------------------------
-        # AUTOMATIC CBM
-        # ----------------------------------------------------
+            # ------------------------------------------------
+            # Fermi Level
+            # ------------------------------------------------
 
-        cbm_index = np.argmin(Ec)
+            st.markdown(
+                '<div class="card">',
+                unsafe_allow_html=True
+            )
 
-        k_cbm = k[cbm_index]
+            st.subheader(
+                "⚡ Fermi Level"
+            )
 
-        E_cbm = Ec[cbm_index]
+            fermi_level = st.number_input(
+                "Fermi Level E_F (eV)",
+                value=0.0
+            )
 
-        # ----------------------------------------------------
-        # CALCULATED BAND GAP
-        # ----------------------------------------------------
+            st.markdown(
+                """
+**Occupation rule used by the analyzer:**
 
-        calculated_Eg = E_cbm - E_vbm
+\[
+E \leq E_F
+\]
 
-        # ----------------------------------------------------
-        # k SEPARATION
-        # ----------------------------------------------------
+→ Occupied states
 
-        delta_k = abs(
-            k_cbm - k_vbm
-        )
+\[
+E > E_F
+\]
 
-        # ----------------------------------------------------
-        # AUTOMATIC DIRECT / INDIRECT
-        # ----------------------------------------------------
+→ Unoccupied states
+"""
+            )
 
-        k_step = abs(
-            k[1] - k[0]
-        )
+            st.markdown(
+                "</div>",
+                unsafe_allow_html=True
+            )
 
-        if delta_k <= k_step * 1.5:
+            # ------------------------------------------------
+            # DOS
+            # ------------------------------------------------
 
-            band_type = "DIRECT BAND GAP"
+            st.markdown(
+                '<div class="card">',
+                unsafe_allow_html=True
+            )
 
-        else:
+            st.subheader(
+                "📉 DOS Data — Optional"
+            )
 
-            band_type = "INDIRECT BAND GAP"
+            st.info(
+                "DOS CSV should contain two columns: "
+                "Energy and DOS."
+            )
 
-        # ====================================================
-        # GRAPH
-        # ====================================================
+            dos_file = st.file_uploader(
+                "Upload DOS CSV",
+                type=["csv"]
+            )
 
-        fig = go.Figure()
+            st.markdown(
+                "</div>",
+                unsafe_allow_html=True
+            )
 
-        # ----------------------------------------------------
-        # CONDUCTION BAND
-        # ----------------------------------------------------
+            if st.button(
+                "🚀 Analyze Band Structure",
+                type="primary",
+                use_container_width=True
+            ):
 
-        fig.add_trace(
-            go.Scatter(
-                x=k,
-                y=Ec,
-                mode="lines",
-                name="Conduction Band",
-                line=dict(width=3),
-                customdata=np.column_stack(
-                    (
-                        k,
-                        Ec,
-                        np.full(
-                            len(k),
-                            "Conduction Band"
-                        )
+                try:
+
+                    result = calculate_vbm_cbm(
+                        ek_df,
+                        fermi_level
                     )
-                ),
-                hovertemplate=
-                "<b>%{customdata[2]}</b><br>"
-                "k = %{customdata[0]:.6f}<br>"
-                "E = %{customdata[1]:.6f} eV"
-                "<extra></extra>"
-            )
-        )
 
-        # ----------------------------------------------------
-        # VALENCE BAND
-        # ----------------------------------------------------
+                    # -----------------------------------------
+                    # E-k GRAPH
+                    # -----------------------------------------
 
-        fig.add_trace(
-            go.Scatter(
-                x=k,
-                y=Ev,
-                mode="lines",
-                name="Valence Band",
-                line=dict(width=3),
-                customdata=np.column_stack(
-                    (
-                        k,
-                        Ev,
-                        np.full(
-                            len(k),
-                            "Valence Band"
-                        )
+                    fig = create_dft_graph(
+                        ek_df,
+                        material,
+                        fermi_level,
+                        result
                     )
-                ),
-                hovertemplate=
-                "<b>%{customdata[2]}</b><br>"
-                "k = %{customdata[0]:.6f}<br>"
-                "E = %{customdata[1]:.6f} eV"
-                "<extra></extra>"
+
+                    st.plotly_chart(
+                        fig,
+                        use_container_width=True
+                    )
+
+                    # -----------------------------------------
+                    # RESULT
+                    # -----------------------------------------
+
+                    if (
+                        result["band_type"]
+                        ==
+                        "DIRECT BAND GAP"
+                    ):
+
+                        result_class = (
+                            "direct-result"
+                        )
+
+                    else:
+
+                        result_class = (
+                            "indirect-result"
+                        )
+
+                    st.markdown(
+                        f'<div class="result-card {result_class}">',
+                        unsafe_allow_html=True
+                    )
+
+                    st.subheader(
+                        "📊 Calculation Result"
+                    )
+
+                    c1, c2, c3 = st.columns(3)
+
+                    with c1:
+
+                        st.metric(
+                            "VBM",
+                            f"{result['E_VBM']:.6f} eV"
+                        )
+
+                        st.write(
+                            f"kᵥᵦₘ = "
+                            f"{result['k_VBM']:.6f} Å⁻¹"
+                        )
+
+                        st.caption(
+                            f"Band: {result['VBM_band']}"
+                        )
+
+                    with c2:
+
+                        st.metric(
+                            "CBM",
+                            f"{result['E_CBM']:.6f} eV"
+                        )
+
+                        st.write(
+                            f"k꜀ᵦₘ = "
+                            f"{result['k_CBM']:.6f} Å⁻¹"
+                        )
+
+                        st.caption(
+                            f"Band: {result['CBM_band']}"
+                        )
+
+                    with c3:
+
+                        st.metric(
+                            "Band Gap Eg",
+                            f"{result['Eg']:.6f} eV"
+                        )
+
+                        st.write(
+                            result["band_type"]
+                        )
+
+                    st.markdown(
+                        f"""
+### 🔬 Scientific Calculation
+
+**Valence Band Maximum**
+
+\[
+E_{{VBM}}
+=
+\max(E_{{occupied}})
+=
+{result['E_VBM']:.6f}\ eV
+\]
+
+**Conduction Band Minimum**
+
+\[
+E_{{CBM}}
+=
+\min(E_{{unoccupied}})
+=
+{result['E_CBM']:.6f}\ eV
+\]
+
+**Band Gap**
+
+\[
+E_g
+=
+E_{{CBM}}
+-
+E_{{VBM}}
+\]
+
+\[
+E_g
+=
+{result['E_CBM']:.6f}
+-
+({result['E_VBM']:.6f})
+\]
+
+\[
+\boxed{{E_g = {result['Eg']:.6f}\ eV}}
+\]
+
+**Wave-vector positions**
+
+\[
+k_{{VBM}}
+=
+{result['k_VBM']:.6f}\ Å^{{-1}}
+\]
+
+\[
+k_{{CBM}}
+=
+{result['k_CBM']:.6f}\ Å^{{-1}}
+\]
+
+**Wave-vector separation**
+
+\[
+\Delta k
+=
+|k_{{CBM}}-k_{{VBM}}|
+\]
+
+\[
+\Delta k
+=
+{result['delta_k']:.6f}\ Å^{{-1}}
+\]
+
+### Final Classification
+
+\[
+\boxed{{\text{{{result['band_type']}}}}}
+\]
+"""
+                    )
+
+                    st.markdown(
+                        "</div>",
+                        unsafe_allow_html=True
+                    )
+
+                    # -----------------------------------------
+                    # DOS
+                    # -----------------------------------------
+
+                    dos_df = None
+
+                    if dos_file is not None:
+
+                        dos_df = pd.read_csv(
+                            dos_file
+                        )
+
+                        if len(dos_df.columns) >= 2:
+
+                            dos_df = dos_df.iloc[:, :2]
+
+                            dos_df.columns = [
+                                "energy",
+                                "dos"
+                            ]
+
+                            dos_df["energy"] = pd.to_numeric(
+                                dos_df["energy"],
+                                errors="coerce"
+                            )
+
+                            dos_df["dos"] = pd.to_numeric(
+                                dos_df["dos"],
+                                errors="coerce"
+                            )
+
+                            dos_df = dos_df.dropna()
+
+                            st.subheader(
+                                "📉 Density of States"
+                            )
+
+                            dos_fig = create_dos_graph(
+                                dos_df,
+                                material,
+                                fermi_level
+                            )
+
+                            st.plotly_chart(
+                                dos_fig,
+                                use_container_width=True
+                            )
+
+                    # -----------------------------------------
+                    # SAVE RESULT
+                    # -----------------------------------------
+
+                    st.session_state[
+                        "dft_result"
+                    ] = result
+
+                    st.session_state[
+                        "dft_material"
+                    ] = material
+
+                    st.session_state[
+                        "dft_symbol"
+                    ] = symbol
+
+                    st.session_state[
+                        "dft_source"
+                    ] = data_source
+
+                    st.session_state[
+                        "dft_fermi"
+                    ] = fermi_level
+
+                except Exception as error:
+
+                    st.error(
+                        f"Analysis Error: {error}"
+                    )
+
+                    st.info(
+                        "Check your CSV format, Fermi level, "
+                        "and band energies."
+                    )
+
+        except Exception as error:
+
+            st.error(
+                f"CSV Error: {error}"
             )
-        )
 
-        # ----------------------------------------------------
-        # VBM MARKER
-        # ----------------------------------------------------
 
-        fig.add_trace(
-            go.Scatter(
-                x=[k_vbm],
-                y=[E_vbm],
-                mode="markers+text",
-                name="VBM",
-                text=["VBM"],
-                textposition="top center",
-                marker=dict(
-                    size=15,
-                    symbol="diamond"
-                ),
-                hovertemplate=
-                f"<b>VBM</b><br>"
-                f"k<sub>VBM</sub> = "
-                f"{k_vbm:.6f} {k_unit}<br>"
-                f"E<sub>VBM</sub> = "
-                f"{E_vbm:.6f} eV"
-                "<extra></extra>"
-            )
-        )
+# =========================================================
+# REPORT SECTION
+# =========================================================
 
-        # ----------------------------------------------------
-        # CBM MARKER
-        # ----------------------------------------------------
+if "dft_result" in st.session_state:
 
-        fig.add_trace(
-            go.Scatter(
-                x=[k_cbm],
-                y=[E_cbm],
-                mode="markers+text",
-                name="CBM",
-                text=["CBM"],
-                textposition="top center",
-                marker=dict(
-                    size=15,
-                    symbol="diamond"
-                ),
-                hovertemplate=
-                f"<b>CBM</b><br>"
-                f"k<sub>CBM</sub> = "
-                f"{k_cbm:.6f} {k_unit}<br>"
-                f"E<sub>CBM</sub> = "
-                f"{E_cbm:.6f} eV"
-                "<extra></extra>"
-            )
-        )
+    st.markdown("---")
 
-        # ====================================================
-        # BAND GAP ARROW
-        # ====================================================
+    st.subheader(
+        "📄 Download Reports"
+    )
 
-        fig.add_annotation(
-            x=k_cbm,
-            y=E_cbm,
-            ax=k_cbm,
-            ay=E_vbm,
-            text=f"<b>Eg = {calculated_Eg:.4f} eV</b>",
-            showarrow=True,
-            arrowhead=3,
-            arrowsize=1.3,
-            arrowwidth=2
-        )
+    result = st.session_state[
+        "dft_result"
+    ]
 
-        # ====================================================
-        # INDIRECT HORIZONTAL SEPARATION
-        # ====================================================
+    material = st.session_state[
+        "dft_material"
+    ]
 
-        if band_type == "INDIRECT BAND GAP":
+    symbol = st.session_state[
+        "dft_symbol"
+    ]
 
-            mid_energy = (
-                E_vbm +
-                0.10 * calculated_Eg
-            )
+    source = st.session_state[
+        "dft_source"
+    ]
 
-            fig.add_shape(
-                type="line",
-                x0=k_vbm,
-                y0=mid_energy,
-                x1=k_cbm,
-                y1=mid_energy,
-                line=dict(
-                    width=3,
-                    dash="dash"
-                )
-            )
+    fermi = st.session_state[
+        "dft_fermi"
+    ]
 
-            fig.add_annotation(
-                x=(k_vbm + k_cbm) / 2,
-                y=mid_energy,
-                text=f"<b>Δk = {delta_k:.4f} {k_unit}</b>",
-                showarrow=False,
-                yshift=14
-            )
+    # CSV
+    report_data = pd.DataFrame([
+        {
+            "Material": material,
+            "Symbol": symbol,
+            "Data Source": source,
+            "Fermi Level (eV)": fermi,
 
-            # Vertical guide from VBM
+            "VBM Energy (eV)":
+                result["E_VBM"],
 
-            fig.add_shape(
-                type="line",
-                x0=k_vbm,
-                y0=E_vbm,
-                x1=k_vbm,
-                y1=mid_energy,
-                line=dict(
-                    width=1,
-                    dash="dot"
-                )
-            )
+            "VBM k (Å^-1)":
+                result["k_VBM"],
 
-            # Vertical guide from CBM
+            "VBM Band":
+                result["VBM_band"],
 
-            fig.add_shape(
-                type="line",
-                x0=k_cbm,
-                y0=E_cbm,
-                x1=k_cbm,
-                y1=mid_energy,
-                line=dict(
-                    width=1,
-                    dash="dot"
-                )
-            )
+            "CBM Energy (eV)":
+                result["E_CBM"],
 
-        # ====================================================
-        # DIRECT VERTICAL GUIDE
-        # ====================================================
+            "CBM k (Å^-1)":
+                result["k_CBM"],
 
-        else:
+            "CBM Band":
+                result["CBM_band"],
 
-            fig.add_shape(
-                type="line",
-                x0=k_vbm,
-                y0=E_vbm,
-                x1=k_vbm,
-                y1=E_cbm,
-                line=dict(
-                    width=1,
-                    dash="dot"
-                )
-            )
+            "Band Gap Eg (eV)":
+                result["Eg"],
 
-        # ====================================================
-        # GRAPH TITLE
-        # ====================================================
+            "Delta k (Å^-1)":
+                result["delta_k"],
 
-        fig.update_layout(
+            "Band Gap Type":
+                result["band_type"]
+        }
+    ])
 
-            title=dict(
-                text=(
-                    f"<b>{material_name} "
-                    f"({material_symbol}) — "
-                    f"{band_type}</b>"
-                ),
-                font=dict(size=24)
-            ),
+    col1, col2 = st.columns(2)
 
-            xaxis_title=(
-                f"Wave Vector, k ({k_unit})"
-            ),
+    with col1:
 
-            yaxis_title="Energy, E (eV)",
-
-            height=700,
-
-            template="plotly_dark",
-
-            hovermode="closest",
-
-            margin=dict(
-                l=70,
-                r=60,
-                t=100,
-                b=70
-            ),
-
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="left",
-                x=0
-            )
-        )
-
-        # ====================================================
-        # DISPLAY GRAPH
-        # ====================================================
-
-        st.markdown(
-            '<div class="card">',
-            unsafe_allow_html=True
-        )
-
-        st.markdown(
-            '<div class="section-title">'
-            '📊 Interactive E–k Diagram'
-            '</div>',
-            unsafe_allow_html=True
-        )
-
-        st.plotly_chart(
-            fig,
+        st.download_button(
+            "📊 Download CSV Report",
+            report_data.to_csv(
+                index=False
+            ).encode("utf-8"),
+            file_name=
+            f"{symbol}_band_analysis.csv",
+            mime="text/csv",
             use_container_width=True
         )
 
-        st.markdown(
-            """
-            <div style="
-                text-align:center;
-                color:#91a8c2;
-                font-size:14px;
-                padding:8px;
-            ">
-            🖱️ Move the cursor over the bands to read
-            exact <b>k</b>, <b>Energy</b> and <b>Band</b>.
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+    with col2:
 
-        st.markdown("</div>", unsafe_allow_html=True)
+        try:
 
-        # ====================================================
-        # CALCULATION RESULTS
-        # ====================================================
-
-        st.markdown(
-            '<div class="card">',
-            unsafe_allow_html=True
-        )
-
-        st.markdown(
-            '<div class="section-title">'
-            '🧮 Calculation Results'
-            '</div>',
-            unsafe_allow_html=True
-        )
-
-        r1, r2 = st.columns(2)
-
-        # VBM
-
-        with r1:
-
-            st.markdown(
-                f"""
-                <div class="result-card">
-
-                <div class="result-symbol">
-                E<sub>VBM</sub>
-                </div>
-
-                <div class="result-label">
-                Valence Band Maximum
-                </div>
-
-                <div class="result-value">
-                {E_vbm:.6f} eV
-                </div>
-
-                <div style="
-                color:#9db4cf;
-                margin-top:10px;
-                ">
-                k<sub>VBM</sub> =
-                {k_vbm:.6f} {k_unit}
-                </div>
-
-                </div>
-                """,
-                unsafe_allow_html=True
+            pdf = create_pdf_report(
+                material,
+                symbol,
+                source,
+                fermi,
+                result
             )
 
-        # CBM
-
-        with r2:
-
-            st.markdown(
-                f"""
-                <div class="result-card">
-
-                <div class="result-symbol">
-                E<sub>CBM</sub>
-                </div>
-
-                <div class="result-label">
-                Conduction Band Minimum
-                </div>
-
-                <div class="result-value">
-                {E_cbm:.6f} eV
-                </div>
-
-                <div style="
-                color:#9db4cf;
-                margin-top:10px;
-                ">
-                k<sub>CBM</sub> =
-                {k_cbm:.6f} {k_unit}
-                </div>
-
-                </div>
-                """,
-                unsafe_allow_html=True
+            st.download_button(
+                "📄 Download PDF Report",
+                pdf,
+                file_name=
+                f"{symbol}_E-k_Report.pdf",
+                mime="application/pdf",
+                use_container_width=True
             )
 
-        # BAND GAP
+        except Exception as error:
 
-        st.markdown(
-            f"""
-            <div class="bandgap-card">
-
-            <div style="
-            color:#a6bdd5;
-            font-size:15px;
-            ">
-            Calculated Band Gap
-            </div>
-
-            <div class="bandgap-value">
-            E<sub>g</sub> =
-            {calculated_Eg:.6f} eV
-            </div>
-
-            <div style="
-            color:#91a8c2;
-            font-size:14px;
-            ">
-            E<sub>g</sub> =
-            E<sub>CBM</sub> − E<sub>VBM</sub>
-            </div>
-
-            <div style="margin-top:18px;">
-
-            {
-                '<span class="direct">🟢 DIRECT BAND GAP</span>'
-                if band_type == "DIRECT BAND GAP"
-                else
-                '<span class="indirect">🟠 INDIRECT BAND GAP</span>'
-            }
-
-            </div>
-
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        # ====================================================
-        # ANALYSIS INFORMATION
-        # ====================================================
-
-        st.markdown(
-            '<div class="card">',
-            unsafe_allow_html=True
-        )
-
-        st.markdown(
-            '<div class="section-title">'
-            '🔎 Graph Analysis'
-            '</div>',
-            unsafe_allow_html=True
-        )
-
-        if band_type == "DIRECT BAND GAP":
-
-            st.success(
-                f"""
-                DIRECT BAND GAP detected.
-
-                k_VBM = {k_vbm:.6f} {k_unit}
-
-                k_CBM = {k_cbm:.6f} {k_unit}
-
-                The VBM and CBM occur at approximately
-                the same wave-vector position.
-                """
+            st.error(
+                f"PDF Error: {error}"
             )
 
-        else:
 
-            st.warning(
-                f"""
-                INDIRECT BAND GAP detected.
+# =========================================================
+# FOOTER
+# =========================================================
 
-                k_VBM = {k_vbm:.6f} {k_unit}
+st.markdown("---")
 
-                k_CBM = {k_cbm:.6f} {k_unit}
-
-                Δk = {delta_k:.6f} {k_unit}
-
-                The VBM and CBM occur at different
-                wave-vector positions.
-                """
-            )
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        # ====================================================
-        # FOOTER
-        # ====================================================
-
-        st.markdown(
-            """
-            <div style="
-                text-align:center;
-                color:#7088a5;
-                padding:20px;
-                font-size:13px;
-            ">
-            ⚛️ E–k Diagram Analyzer
-            |
-            Semiconductor Band Structure Analysis
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+st.markdown(
+    """
+<div style="text-align:center;color:#64748b;">
+⚛️ E–k Diagram Analyzer |
+Theoretical + DFT/Experimental Analysis |
+No AI/API Dependency
+</div>
+""",
+    unsafe_allow_html=True
+)
