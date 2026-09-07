@@ -212,6 +212,13 @@ def prepare_dft_data(df):
         subset=["k"]
     )
 
+    band_columns = [column for column in df.columns if column != "k"]
+    if not band_columns:
+        raise ValueError("CSV has no band-energy columns after the k column.")
+
+    if df[band_columns].notna().sum().sum() == 0:
+        raise ValueError("CSV contains no valid numeric band-energy values.")
+
     return df
 
 
@@ -909,7 +916,8 @@ with st.sidebar:
 
     energy_value = st.number_input(
         "Energy Value",
-        value=1.0
+        value=None,
+        placeholder="Enter value"
     )
 
     energy_from = st.selectbox(
@@ -924,31 +932,35 @@ with st.sidebar:
         key="energy_to"
     )
 
-    energy_ev = energy_to_ev(
-        energy_value,
-        energy_from
-    )
+    if energy_value is not None:
+        energy_ev = energy_to_ev(
+            energy_value,
+            energy_from
+        )
+    else:
+        energy_ev = None
 
-    if energy_to == "J":
+    if energy_to == "J" and energy_ev is not None:
 
         output_energy = (
             energy_ev * EV_TO_J
         )
 
-    else:
-
+    elif energy_ev is not None:
         output_energy = energy_ev
+    else:
+        output_energy = None
 
-    st.info(
-        f"{output_energy:.8g} {energy_to}"
-    )
+    if output_energy is not None:
+        st.info(f"{output_energy:.8g} {energy_to}")
 
     # Mass
     st.subheader("Mass")
 
     mass_value = st.number_input(
         "Mass Value",
-        value=1.0
+        value=None,
+        placeholder="Enter value"
     )
 
     mass_from = st.selectbox(
@@ -963,33 +975,36 @@ with st.sidebar:
         key="mass_to"
     )
 
-    mass_kg = mass_to_kg(
-        mass_value,
-        mass_from
-    )
+    if mass_value is not None:
+        mass_kg = mass_to_kg(
+            mass_value,
+            mass_from
+        )
+    else:
+        mass_kg = None
 
-    if mass_to == "kg":
+    if mass_to == "kg" and mass_kg is not None:
         mass_output = mass_kg
 
-    elif mass_to == "g":
+    elif mass_to == "g" and mass_kg is not None:
         mass_output = mass_kg * 1000
-
-    elif mass_to == "mg":
+    elif mass_to == "mg" and mass_kg is not None:
         mass_output = mass_kg * 1e6
-
-    else:
+    elif mass_kg is not None:
         mass_output = mass_kg / M0
+    else:
+        mass_output = None
 
-    st.info(
-        f"{mass_output:.8g} {mass_to}"
-    )
+    if mass_output is not None:
+        st.info(f"{mass_output:.8g} {mass_to}")
 
     # Wave vector
     st.subheader("Wave Vector")
 
     k_value = st.number_input(
         "k Value",
-        value=1.0
+        value=None,
+        placeholder="Enter value"
     )
 
     k_from = st.selectbox(
@@ -1004,19 +1019,23 @@ with st.sidebar:
         key="k_to"
     )
 
-    k_ang = k_to_angstrom(
-        k_value,
-        k_from
-    )
-
-    if k_to == "Å⁻¹":
-        k_output = k_ang
+    if k_value is not None:
+        k_ang = k_to_angstrom(
+            k_value,
+            k_from
+        )
     else:
-        k_output = k_ang * 1e10
+        k_ang = None
 
-    st.info(
-        f"{k_output:.8g} {k_to}"
-    )
+    if k_to == "Å⁻¹" and k_ang is not None:
+        k_output = k_ang
+    elif k_ang is not None:
+        k_output = k_ang * 1e10
+    else:
+        k_output = None
+
+    if k_output is not None:
+        st.info(f"{k_output:.8g} {k_to}")
 
     st.markdown("---")
 
@@ -1024,6 +1043,93 @@ with st.sidebar:
         "Scientific calculations are performed directly by Python. "
         "No AI/API is used."
     )
+
+
+# =========================================================
+# INPUT VALIDATION
+# =========================================================
+
+def validate_theoretical_inputs(material, symbol, eg_value, eg_unit,
+                                electron_mass_value, electron_mass_unit,
+                                hole_mass_value, hole_mass_unit,
+                                k_min, k_max, number_points,
+                                theoretical_type, cbm_k):
+    errors = []
+
+    if not material or not material.strip():
+        errors.append("Material Name is required.")
+    if not symbol or not symbol.strip():
+        errors.append("Material Symbol is required.")
+
+    if eg_value is None:
+        errors.append("Band Gap Energy Eg is required.")
+    else:
+        if not np.isfinite(eg_value) or eg_value <= 0:
+            errors.append("Band Gap Energy Eg must be greater than 0.")
+
+    if electron_mass_value is None:
+        errors.append("Electron Effective Mass is required.")
+    else:
+        if not np.isfinite(electron_mass_value) or electron_mass_value <= 0:
+            errors.append("Electron Effective Mass must be greater than 0.")
+
+    if hole_mass_value is None:
+        errors.append("Hole Effective Mass is required.")
+    else:
+        if not np.isfinite(hole_mass_value) or hole_mass_value <= 0:
+            errors.append("Hole Effective Mass must be greater than 0.")
+
+    if k_min is None or k_max is None:
+        errors.append("Both k Minimum and k Maximum are required.")
+    elif not np.isfinite(k_min) or not np.isfinite(k_max):
+        errors.append("k Minimum and k Maximum must be finite values.")
+    elif k_max <= k_min:
+        errors.append("k Maximum must be greater than k Minimum.")
+
+    if number_points is None:
+        errors.append("Number of Points is required.")
+    elif not np.isfinite(number_points) or number_points < 2 or int(number_points) != number_points:
+        errors.append("Number of Points must be a whole number of at least 2.")
+
+    if theoretical_type == "Indirect":
+        if cbm_k is None:
+            errors.append("CBM k-position is required for an Indirect band gap.")
+        elif not np.isfinite(cbm_k):
+            errors.append("CBM k-position must be a finite value.")
+        elif k_min is not None and k_max is not None and np.isfinite(k_min) and np.isfinite(k_max):
+            if cbm_k < k_min or cbm_k > k_max:
+                errors.append(
+                    f"CBM k-position {cbm_k:g} is NOT VALID: it must lie between "
+                    f"k Minimum ({k_min:g}) and k Maximum ({k_max:g})."
+                )
+
+    # Scientific suitability checks: no artificial widget limits are imposed,
+    # but physically impossible/non-suitable values are rejected at calculation.
+    if eg_value is not None and np.isfinite(eg_value):
+        eg_ev = energy_to_ev(eg_value, eg_unit)
+        if not np.isfinite(eg_ev) or eg_ev <= 0:
+            errors.append("Band Gap Energy is NOT VALID after unit conversion.")
+        elif eg_ev > 100:
+            errors.append(
+                f"Band Gap Energy {eg_value:g} {eg_unit} is NOT VALID for this "
+                "semiconductor E–k model (converted Eg > 100 eV)."
+            )
+
+    for label, value, unit in [
+        ("Electron Effective Mass", electron_mass_value, electron_mass_unit),
+        ("Hole Effective Mass", hole_mass_value, hole_mass_unit),
+    ]:
+        if value is not None and np.isfinite(value):
+            kg = mass_to_kg(value, unit)
+            if not np.isfinite(kg) or kg <= 0:
+                errors.append(f"{label} is NOT VALID after unit conversion.")
+            elif kg > 1e-24 or kg < 1e-36:
+                errors.append(
+                    f"{label} value {value:g} {unit} is NOT VALID for this "
+                    "effective-mass model."
+                )
+
+    return errors
 
 
 # =========================================================
@@ -1037,6 +1143,7 @@ if mode == "Theoretical E–k Model":
         unsafe_allow_html=True
     )
 
+    st.info("Fields are blank by default. There are no arbitrary widget min/max limits; scientifically unsuitable or logically invalid values are flagged as ❌ NOT VALID when you generate/analyze.")
     st.subheader("🧪 Material Details")
 
     col1, col2 = st.columns(2)
@@ -1045,12 +1152,12 @@ if mode == "Theoretical E–k Model":
 
         material = st.text_input(
             "Material Name",
-            "Silicon"
+            value=""
         )
 
         symbol = st.text_input(
             "Material Symbol",
-            "Si"
+            value=""
         )
 
     with col2:
@@ -1166,12 +1273,17 @@ if mode == "Theoretical E–k Model":
         use_container_width=True
     ):
 
-        if k_max <= k_min:
+        validation_errors = validate_theoretical_inputs(
+            material, symbol, Eg_value, Eg_unit,
+            electron_mass_value, electron_mass_unit,
+            hole_mass_value, hole_mass_unit,
+            k_min, k_max, number_points,
+            theoretical_type, cbm_k
+        )
 
-            st.error(
-                "k Maximum must be greater than k Minimum."
-            )
-
+        if validation_errors:
+            for validation_error in validation_errors:
+                st.error(f"❌ NOT VALID: {validation_error}")
             st.stop()
 
         try:
@@ -1398,12 +1510,12 @@ else:
 
         material = st.text_input(
             "Material Name",
-            "Silicon"
+            value=""
         )
 
         symbol = st.text_input(
             "Material Symbol",
-            "Si"
+            value=""
         )
 
     with col2:
@@ -1565,6 +1677,16 @@ E > E_F
             ):
 
                 try:
+
+                    if not material.strip():
+                        st.error("❌ NOT VALID: Material Name is required.")
+                        st.stop()
+                    if not symbol.strip():
+                        st.error("❌ NOT VALID: Material Symbol is required.")
+                        st.stop()
+                    if fermi_level is None or not np.isfinite(fermi_level):
+                        st.error("❌ NOT VALID: Fermi Level is required and must be a finite value.")
+                        st.stop()
 
                     result = calculate_vbm_cbm(
                         ek_df,
